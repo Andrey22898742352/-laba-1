@@ -1,235 +1,217 @@
+/*
+http://www.ue.eti.pg.gda.pl/fpgalab/zadania.spartan3/zad_vga_struktura_pliku_bmp_en.html
+https://ru.wikipedia.org/wiki/BMP
+*/
+
 #include <iostream>
 #include <fstream>
-#include <cmath>
-#include <chrono>
+#include <string.h>
+#include <vector>
+
 
 using namespace std;
 
-// Выключение выравнивания байтов
-#pragma pack(push, 1)
+struct header_struct {
+    short signature;
+    int fileSize;
+    int reserved;
+    int dataOffset;
+} header_s;
 
-// Структура заголовка BMP файла
-struct BMPFileHeader {
-    uint16_t file_type{ 0x4D42 };  // Тип файла "BM"
-    uint32_t file_size{ 0 };       // Размер файла в байтах
-    uint16_t reserved1{ 0 };       // Зарезервировано (должно быть 0)
-    uint16_t reserved2{ 0 };       // Зарезервировано (должно быть 0)
-    uint32_t offset_data{ 0 };     // Смещение данных изображения
+struct info_header {
+    int size;
+    int width;
+    int height;
+    short planes;
+    short bitcount;
+    int compression;
+    int imageSize;
+    int XpixelsPerM;
+    int YpixelsPerM;
+    int colorsUsed;
+    int colorsImportant;
+} info_h;
 
-    uint32_t size{ 0 };            // Размер структуры заголовка
-    int32_t width{ 0 };            // Ширина изображения в пикселях
-    int32_t height{ 0 };           // Высота изображения в пикселях
-    uint16_t planes{ 1 };          // Количество плоскостей (должно быть 1)
-    uint16_t bit_count{ 0 };       // Битов на пиксель (цветовая глубина)
-    uint32_t compression{ 0 };     // Тип сжатия (0 для без сжатия)
-    uint32_t size_image{ 0 };      // Размер изображения в байтах
-    int32_t x_pixels_per_meter{ 0 }; // Горизонтальное разрешение (пикселей на метр)
-    int32_t y_pixels_per_meter{ 0 }; // Вертикальное разрешение (пикселей на метр)
-    uint32_t colors_used{ 0 };     // Количество используемых цветов (0 для максимального)
-    uint32_t colors_important{ 0 }; // Количество важных цветов (0 для всех)
-
-    // Маски для извлечения компонент цвета из пикселя (для формата BGRA)
-    uint32_t red_mask{ 0x00ff0000 };
-    uint32_t green_mask{ 0x0000ff00 };
-    uint32_t blue_mask{ 0x000000ff };
-    uint32_t alpha_mask{ 0xff000000 };
-
-    // Тип цветового пространства (sRGB)
-    uint32_t color_space_type{ 0x73524742 };
-
-    // Зарезервированные байты (должны быть нулями)
-    uint32_t unused[16]{ 0 };
+struct pixel_struct {
+    char b;
+    char g;
+    char r;
+    char a;
 };
 
-#pragma pack(pop)
-
-// Глобальная переменная для хранения данных заголовка BMP
-BMPFileHeader fileheader;
-
-// Функция для чтения данных из файла BMP
-unsigned char* read_file(const char* filename) {
-    // Открытие файла для чтения в бинарном режиме
-    FILE* SourceImage = fopen(filename, "rb");
-    if (!SourceImage) {
-        cout << "Файл не был открыт\n";
-        return 0;
-    }
-
-    // Чтение заголовка BMP
-    size_t FileHeaderSize = fread(&fileheader, sizeof(char), sizeof(BMPFileHeader), SourceImage);
-    if (FileHeaderSize != sizeof(BMPFileHeader)) {
-        fclose(SourceImage);
-        cout << "Заголовок BMP был прочитан неправильно (проблема с размером)!\n";
-        return 0;
-    }
-    cout << FileHeaderSize << " = размер заголовка\n";
-
-    // Вычисление необходимой дополнительной пустой строки в конце каждой строки пикселей
-    int width = fileheader.width;
-    int height = fileheader.height;
-    int padding = (4 - width * 3 % 4) % 4;
-    
-    // Выделение памяти под данные пикселей
-    unsigned char* PixelInfo = new unsigned char[(3 * width + padding) * height];
-    size_t BytesRead = fread(PixelInfo, sizeof(char), (3 * width + padding) * height, SourceImage);
-    if (BytesRead != (3 * width + padding) * height) {
-        delete[] PixelInfo;
-        fclose(SourceImage);
-        cout << BytesRead << " - байтов прочитано, должно быть " << (3 * width + padding) * height << " байтов\n";
-        cout << "Информация о пикселях прочитана неправильно\n";
-        return 0;
-    }
-    fclose(SourceImage);
-    return PixelInfo;
-}
-
-// Функция для записи данных в файл BMP
-unsigned char* write_file(const char* filename, BMPFileHeader FileHeader, unsigned char* data) {
-    // Открытие файла для записи в бинарном режиме
-    FILE* ImageWrite = fopen(filename, "wb");
-    if (!ImageWrite) {
-        cout << "Файл не был открыт\n";
-        return 0;
-    }
-
-    // Запись заголовка BMP
-    size_t FileHeaderSize = fwrite(&FileHeader, sizeof(char), sizeof(BMPFileHeader), ImageWrite);
-    if (FileHeaderSize != sizeof(BMPFileHeader)) {
-        fclose(ImageWrite);
-        cout << "Заголовок записан неправильно\n";
-        return 0;
-    }
-
-    // Вычисление необходимой дополнительной пустой строки в конце каждой строки пикселей
-    int padding = (4 - FileHeader.width * 3 % 4) % 4;
-
-    // Запись данных пикселей
-    size_t WrittenBytes = fwrite(data, sizeof(char), (3 * FileHeader.width + padding) * FileHeader.height, ImageWrite);
-    if (WrittenBytes != (3 * FileHeader.width + padding) * FileHeader.height) {
-        cout << WrittenBytes << " / " << (3 * FileHeader.width + padding) * FileHeader.height << " байтов записано\n";
-        fclose(ImageWrite);
-    }
-    else {
-        cout << "Файл успешно записан\n";
-    }
-
-    fclose(ImageWrite);
-    return 0;
-}
-
-// Функция для поворота изображения на 90 градусов влево
-unsigned char* turn_left(BMPFileHeader FileHeader, unsigned char* data) {
-    int w = FileHeader.width, h = FileHeader.height;
-    int PaddingCurr = (4 - 3 * w % 4) % 4, PaddingSource = (4 - 3 * h % 4) % 4;
-    unsigned char* Result = new unsigned char[(3 * w + PaddingCurr) * h];
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            Result[(y * w + x) * 3 + y * PaddingCurr] = data[((w - 1 - x) * h + y) * 3 + (w - 1 - x) * PaddingSource];
-            Result[(y * w + x) * 3 + 1 + y * PaddingCurr] = data[((w - 1 - x) * h + y) * 3 + 1 + (w - 1 - x) * PaddingSource];
-            Result[(y * w + x) * 3 + 2 + y * PaddingCurr] = data[((w - 1 - x) * h + y) * 3 + 2 + (w - 1 - x) * PaddingSource];
+void delete_pixel_array(
+        vector<vector<pixel_struct*>>& array) {
+    for (vector<pixel_struct*> v : array) {
+        for (pixel_struct* p : v) {
+            delete p;
         }
     }
-    return Result;
 }
 
-// Функция для поворота изображения на 90 градусов вправо
-unsigned char* turn_right(BMPFileHeader FileHeader, unsigned char* data) {
-    int w = FileHeader.width, h = FileHeader.height;
-    int PaddingCurr = (4 - 3 * w % 4) % 4, PaddingSource = (4 - 3 * h % 4) % 4;
-    unsigned char* Result = new unsigned char[(3 * w + PaddingCurr) * h];
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            Result[(y * w + x) * 3 + y * PaddingCurr] = data[(x * h + h - 1 - y) * 3 + x * PaddingSource];
-            Result[(y * w + x) * 3 + 1 + y * PaddingCurr] = data[(x * h + h - 1 - y) * 3 + 1 + x * PaddingSource];
-            Result[(y * w + x) * 3 + 2 + y * PaddingCurr] = data[(x * h + h - 1 - y) * 3 + 2 + x * PaddingSource];
+vector<vector<pixel_struct*>> right_rotate(
+        vector<vector<pixel_struct*>>& array,
+         int w, int h) {
+
+    vector<
+        vector<pixel_struct*>
+    > array90_r;
+    for (int i=0; i<w; i++) {
+        vector<pixel_struct*> column;
+        for (int j=0; j<h; j++) {
+            // convert column into row
+            column.insert(column.begin(), array[j][i]);
         }
+        array90_r.push_back(column);
     }
-    return Result;
+    return array90_r;
 }
 
-// Функция для применения фильтра Гаусса к изображению
-unsigned char* gaussian_blur(BMPFileHeader FileHeader, unsigned char* data) {
-    const int radius = 10, MatrixSize = 2 * radius + 1;
-    const double pi = 3.14159, sigma = radius / 3;
-    double sum = 0.0;
+vector<vector<pixel_struct*>> left_rotate(
+        vector<vector<pixel_struct*>>& array,
+        int w, int h) {
 
-    double GausKernel[MatrixSize][MatrixSize];
-    for (int y = -radius; y <= radius; y++) {
-        for (int x = -radius; x <= radius; x++) {
-            GausKernel[y + radius][x + radius] = exp(-(x * x + y * y) / (2 * sigma * sigma)) / (2 * pi * sigma * sigma);
-            sum += GausKernel[y + radius][x + radius];
+    vector<
+        vector<pixel_struct*>
+    > array90_l;
+    for (int i=w-1; i>=0; i--) {
+        vector<pixel_struct*> column;
+        for (int j=0; j<h; j++) {
+            // convert column into row
+            column.push_back(array[j][i]);
         }
+        array90_l.push_back(column);
     }
-    cout << "Сумма элементов ядра Гаусса: " << sum << endl;
-
-    for (int y = 0; y < MatrixSize; y++) {
-        for (int x = 0; x < MatrixSize; x++) {
-            GausKernel[y][x] /= sum;
-        }
-    }
-
-    int padding = (4 - 3 * FileHeader.width % 4) % 4;
-    unsigned char* Result = new unsigned char[(3 * FileHeader.width + padding) * FileHeader.height];
-    for (size_t y = 0; y < FileHeader.height; y++) {
-        for (size_t x = 0; x < FileHeader.width; x++) {
-            double r = 0, g = 0, b = 0;
-            for (int ShiftHeight = 0; ShiftHeight < MatrixSize; ShiftHeight++) {
-                for (int ShiftWidth = 0; ShiftWidth < MatrixSize; ShiftWidth++) {
-                    if (y + ShiftHeight - radius > 0 and y + ShiftHeight - radius < FileHeader.height and x + ShiftWidth - radius > 0 and x + ShiftWidth - radius < FileHeader.width) {
-                        r += GausKernel[ShiftHeight][ShiftWidth] * data[((y + ShiftHeight - radius) * FileHeader.width + x + ShiftWidth - radius) * 3 + padding * (y + ShiftHeight - radius)];
-                        g += GausKernel[ShiftHeight][ShiftWidth] * data[((y + ShiftHeight - radius) * FileHeader.width + x + ShiftWidth - radius) * 3 + 1 + padding * (y + ShiftHeight - radius)];
-                        b += GausKernel[ShiftHeight][ShiftWidth] * data[((y + ShiftHeight - radius) * FileHeader.width + x + ShiftWidth - radius) * 3 + 2 + padding * (y + ShiftHeight - radius)];
-                    }
-                    else {
-                        r += GausKernel[ShiftHeight][ShiftWidth] * data[(y * FileHeader.width + x) * 3 + y * padding];
-                        g += GausKernel[ShiftHeight][ShiftWidth] * data[(y * FileHeader.width + x) * 3 + 1 + y * padding];
-                        b += GausKernel[ShiftHeight][ShiftWidth] * data[(y * FileHeader.width + x) * 3 + 2 + y * padding];
-                    }
-                }
-            }
-            Result[(y * FileHeader.width + x) * 3 + y * padding] = (int)r;
-            Result[(y * FileHeader.width + x) * 3 + 1 + y * padding] = (int)g;
-            Result[(y * FileHeader.width + x) * 3 + 2 + y * padding] = (int)b;
-        }
-    }
-    return Result;
+    return array90_l;
 }
+
 
 int main() {
-    // Замер времени выполнения
-    auto start_time = chrono::high_resolution_clock::now();
 
-    // Чтение изображения из файла BMP
-    unsigned char* PixelInfo = read_file("image.bmp");
-    cout << fileheader.file_size << " byte - size\n";
+    ifstream file ("image.bmp", ios::binary);
+    if (!file) {
+        cout << "Error\n";
+        return 0;
+    }
 
-    // Поворот изображения на 90 градусов влево и запись результата в файл
-    BMPFileHeader LeftRHeader = fileheader;
-    swap(LeftRHeader.width, LeftRHeader.height);
-    unsigned char* LeftRData = turn_left(LeftRHeader, PixelInfo);
-    write_file("./img/Result-TurnedLeft.bmp", LeftRHeader, LeftRData);
-    delete[] LeftRData;
+    /* start of parsing */
+    int header_size = 14;
+    char* header = new char[header_size];
+    file.read(header, header_size);
+    memcpy(&header_s, header, header_size); // serialize raw data into structure
 
-    // Поворот изображения на 90 градусов вправо и запись результата в файл
-    BMPFileHeader RightRHeader = fileheader;
-    swap(RightRHeader.width, RightRHeader.height);
-    unsigned char* RightRData = turn_right(RightRHeader, PixelInfo);
-    write_file("./img/Result-TurnedRight.bmp", RightRHeader, RightRData);
-    delete[] RightRData;
+    int infoheader_size = 40;
+    char* infoheader = new char[infoheader_size];
+    file.read(infoheader, infoheader_size);
+    memcpy(&info_h, infoheader, infoheader_size); // serialize raw data into structure
 
-    // Применение фильтра Гаусса к изображению и запись результата в файл
-    BMPFileHeader GausHeader = fileheader;
-    unsigned char* GausData = gaussian_blur(GausHeader, PixelInfo);
-    write_file("./img/Result-GaussianFilter.bmp", fileheader, GausData);
-    delete[] GausData;
+    char* infoheader_tail = new char[info_h.size - 40];
+    file.read(infoheader_tail, info_h.size - 40);
 
-    // Освобождение памяти
-    delete[] PixelInfo;
+    char* dataBuffer = new char[
+        info_h.imageSize
+    ];
+    file.read(dataBuffer, info_h.imageSize);
+    /* end of parsing */
 
-    // Замер времени выполнения и вывод его на экран
-    auto end_time = chrono::high_resolution_clock::now();
-    auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
-    cout << "Time: " << duration.count() << " ms" << endl;
 
-    return 0;
+    printf("size : %d\n", info_h.size);
+    printf("width : %d\n", info_h.width);
+    printf("height : %d\n", info_h.height);
+    printf("bitcount : %d\n", info_h.bitcount);
+    printf("compression : %d\n", info_h.compression);
+    printf("imageSize : %d\n", info_h.imageSize);
+    printf("colorsUsed : %d\n", info_h.colorsUsed);
+    printf("colorsImportant : %d\n", info_h.colorsImportant);
+
+
+    vector<
+        vector<pixel_struct*>
+    > array;
+
+
+    int index = 0;
+    int offset = (info_h.bitcount == 32) ? 4 : 3;
+    // convert row image data into 2-dim vector
+    for (int i=0; i<info_h.height; i++) {
+        vector<pixel_struct*> row;
+        for (int j=0; j<info_h.width; j++) {
+            pixel_struct* pixel = new pixel_struct;
+
+            memcpy(pixel, &(dataBuffer[index]), offset);
+
+            index += offset;
+            row.push_back(pixel);
+        }
+        array.insert(array.begin(), row);
+    }
+    // end of convert
+
+
+
+    //---------------------------------------
+    vector<
+        vector<pixel_struct*>
+    > array90 = right_rotate(array, info_h.width, info_h.height);
+    int ww = info_h.width, hh = info_h.height;
+    swap(info_h.width, info_h.height);
+
+    // convert 2-dim vector into raw bmp data
+    index = 0;
+    char* outBuffer = new char[info_h.imageSize];
+    for (int i=array90.size()-1; i>=0; i--) {
+        vector<pixel_struct*> row = array90[i];
+        for (pixel_struct* pixel : row) {
+            memcpy(&(outBuffer[index]), pixel, offset);
+            index += offset;
+        }
+    }
+    // end of convert
+
+    ofstream outFile ("right.bmp", ios::binary);
+    outFile.write(header, header_size);
+    outFile.write((char*)(&info_h), sizeof(info_h));
+    outFile.write(infoheader_tail, info_h.size - 40);
+
+    outFile.write(outBuffer, info_h.imageSize);
+    outFile.close();
+    //---------------------------------------
+
+
+
+
+    //---------------------------------------
+    array90 = left_rotate(array, ww, hh);
+
+    // convert 2-dim vector into raw bmp data
+    index = 0;
+    for (int i=array90.size()-1; i>=0; i--) {
+        vector<pixel_struct*> row = array90[i];
+        for (pixel_struct* pixel : row) {
+            memcpy(&(outBuffer[index]), pixel, offset);
+            index += offset;
+        }
+    }
+    // end of convert
+
+    ofstream outFile1 ("left.bmp", ios::binary);
+    outFile1.write(header, header_size);
+    outFile1.write((char*)(&info_h), sizeof(info_h));
+    outFile1.write(infoheader_tail, info_h.size - 40);
+
+    outFile1.write(outBuffer, info_h.imageSize);
+    outFile1.close();
+    //---------------------------------------
+
+
+
+    delete header;
+    delete infoheader;
+    delete infoheader_tail;
+    delete dataBuffer;
+    delete outBuffer;
+
+    delete_pixel_array(array);
+
+    file.close();
+    outFile.close();
 }
